@@ -48,4 +48,4 @@ def add_documents(text_content:str):
     print("Splitting document into chunk for indexing...")
     vector_store = PineconeVectorStore(embedding=embedding, index=PINECONE_INDEX)
     vector_store.add_documents(documents)
-    print("Added chunks to pinecone vectorstore")
+    print("Successfully added chunks to pinecone vectorstore")
