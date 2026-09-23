@@ -3,6 +3,20 @@ from langchain_core.messages import BaseMessage,HumanMessage,AIMessage
 from langchain_groq import ChatGroq
 from pydantic import BaseModel,Field
 import config
+from langchain_core.tools import tool
+from vectorStore import get_retriever
+
+
+#tools
+@tool
+def rag_search_tool(query:str)->str:
+    """Top K chunks from knowledge base (empty string if none)"""
+    try:
+        retriever_instance = get_retriever()
+        docs = retriever_instance.invoke(query,k=3)
+        return "\n\n".join(d.page_content for d in docs) if docs else ""
+    except Exception as e:
+        return f"RAG_ERROR:{e}"
 
 
 #Pydantic schema for structured output
@@ -100,3 +114,64 @@ def router_node(state:AgentState)->AgentState:
     print("--- Exiting router_node ---")
     return out
         
+        
+        
+#Node 2: RAG lookup
+def rag_node(state:AgentState)->AgentState:
+    print("Entering rag_node")
+    query = next((m.content for m in reversed(state["messages"]) if isinstance(m,HumanMessage)),"")
+    web_search_enabled = state.get("web_search_enabled",True)
+    print(f"Router recieved enabled {web_search_enabled}")
+    print(f"Rag query {query}")
+    chunks = rag_search_tool.invoke(query)
+    #LOGIC TO HANDLE THE CHUNKS
+    if chunks.startswith("RAG_ERROR::"):
+        print(f"RAG Error: {chunks}, checking web search enabled status")
+        next_route = "web" if web_search_enabled else "answer"
+        return {**state,"rag":"","route":next_route}
+    if chunks:
+        print(f"Recieved RAG chunks : {chunks[:500]}....")
+    else:
+        print("No RAG chunks retrieved")
+    
+    judge_messages = [
+        ("system", (
+            "You are a judge evaluating if the **retrieved information** is **sufficient and relevant** "
+            "to fully and accurately answer the user's question. "
+            "Consider if the retrieved text directly addresses the question's core and provides enough detail."
+            "If the information is incomplete, vague, outdated, or doesn't directly answer the question, it's NOT sufficient."
+            "If it provides a clear, direct, and comprehensive answer, it IS sufficient."
+            "If no relevant information was retrieved at all (e.g., 'No results found'), it is definitely NOT sufficient."
+            "\n\nRespond ONLY with a JSON object: {\"sufficient\": true/false}"
+            "\n\nExample 1: Question: 'What is the capital of France?' Retrieved: 'Paris is the capital of France.' -> {\"sufficient\": true}"
+            "\nExample 2: Question: 'What are the symptoms of diabetes?' Retrieved: 'Diabetes is a chronic condition.' -> {\"sufficient\": false} (Doesn't answer symptoms)"
+            "\nExample 3: Question: 'How to fix error X in software Y?' Retrieved: 'No relevant information found.' -> {\"sufficient\": false}"
+        )),
+        ("user", f"Question: {query}\n\nRetrieved info: {chunks}\n\nIs this sufficient to answer the question?")
+    ]
+    
+    
+    verdict: RagJudge = judge_llm.invoke(judge_message)
+    print(f"Rag Judge verdict:{verdict.sufficient}")
+    print('Existing rag_node')
+    
+    #Decide my next route based on sufficiency and web search info
+    if verdict.sufficient:
+        next_route = "answer"
+    else:
+        next_route = "web" if web_search_enabled else "answer"
+        print(f"RAG nor sufficient. Web search enabled {web_search_enabled}. Next Route: {next_route}")
+    
+
+
+#Node 3 Web search
+
+def web_node(state: AgentState)->AgentState:
+    print("Entering web_node")
+    query = next((m.content for m in reversed(state["messages"]) if isinstance(m,HumanMessage)),"")
+    web_search_enabled = state.get("web_search_enabled",True)
+    if not web_search_enabled:
+        print("Web search node entered but the search is disabled by the user")
+        return {**state,"web":"Web search was disabled  by user","route":"answer"}
+    print(f'Web search query: {query}')
+    snippets= web_S
