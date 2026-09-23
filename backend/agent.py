@@ -5,6 +5,12 @@ from pydantic import BaseModel,Field
 import config
 from langchain_core.tools import tool
 from vectorStore import get_retriever
+from langchain_tavily import TavilySearch
+from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
+
+
+tavily = TavilySearch(max_result=3,topic="general")
 
 
 #tools
@@ -17,6 +23,27 @@ def rag_search_tool(query:str)->str:
         return "\n\n".join(d.page_content for d in docs) if docs else ""
     except Exception as e:
         return f"RAG_ERROR:{e}"
+
+@tool
+def web_search_tool(query:str)->str:
+    """Up to date web info via tavily"""
+    try:
+        result = tavily.invoke({"query":query})
+        if isinstance(result,dict) and 'results' in result:
+            formatted_results = []
+            for item in result['results']:
+                title = item.get('title', 'No title')
+                content = item.get('content',' No content')
+                url =  item.get('url','')
+                formatted_results.append(f"Title:{title}\n Content: {content}\nURL : {url}")
+            return "\n\n".join(formatted_results) if formatted_results else "No results found"
+        else:
+            return str(result)
+    except Exception as e:
+        return f"WEB_ERROR::{e}"
+
+
+
 
 
 #Pydantic schema for structured output
@@ -174,4 +201,94 @@ def web_node(state: AgentState)->AgentState:
         print("Web search node entered but the search is disabled by the user")
         return {**state,"web":"Web search was disabled  by user","route":"answer"}
     print(f'Web search query: {query}')
-    snippets= web_S
+    snippets= web_search_tool.invoke(query)
+    if snippets.startswith("WEB_ERROR"):
+        print(f"Web Error : {snippets}. Predicting to answer with limited info")
+        return {**state,"web":"","route":"answer"}
+    print(f"Web snippets retrieved : {snippets[:200]}")
+    print("Exiting web_node")
+    return {**state,"web":snippets,"route":"answer"}
+
+
+
+#Node 3 Answer Node Final answer web_search + rag_search
+
+def answer_node(state:AgentState)->AgentState:
+    print("Entering answer_node")
+    user_query = next((m.content for m in reversed(state["messages"]) if isinstance(m,HumanMessage)),"")
+    
+    context_parts = []
+    if state.get("rag"):
+        context_parts.append("Knowledge base information:\n"+state['rag'])
+    elif state.get("web"):
+        if state['web'] and not state["web"].startswith("Web search was disabled"):
+            context_parts.append("Web Search results:\n"+state["web "])
+            
+    context = "\n\n".join(context_parts)
+    if not context.strip():
+        context = "No external context was available for this query. Try to answer based on general knowledge"
+    prompt = f"""Please answer the user's question using the provided context.
+                If the context is empty or irrelevant, try to answer based on your general knowledge.
+
+                Question: {user_q}
+
+                Context:
+                {context}
+
+                Provide a helpful, accurate, and concise response based on the available information."""
+    print(f"Prompt sent to answer_llm: {prompt[:500]}...")
+    ans = answer_llm.invoke([HumanMessage(content=prompt)]).content
+    print(f"Final answer generated: {ans[:200]}...")
+    print("--- Exiting answer_node ---")
+    return {**state,"messages":state["messages"]+AIMessage(content=ans)}
+
+
+# --- Routing helpers ---
+def from_router(st: AgentState) -> Literal["rag", "web", "answer", "end"]:
+    return st["route"]
+
+def after_rag(st: AgentState) -> Literal["answer", "web"]:
+    return st["route"]
+
+def after_web(_) -> Literal["answer"]:
+    return "answer"
+
+
+#Build graph
+
+def build_agent():
+    """Builds and complies the LangGraph agent."""
+    g = StateGraph(AgentState)
+    g.add_node("router",router_node)
+    g.add_node("rag_lookup",rag_node)
+    g.add_node("web_search", web_node)
+    g.add_node("answer", answer_node)
+    g.set_entry_point("router")
+    
+    g.add_conditional_edges(
+        "router",
+        from_router,
+        {
+            "rag": "rag_lookup",
+            "web": "web_search",
+            "answer": "answer",
+            "end": END
+        }
+    )
+    
+    g.add_conditional_edges(
+        "rag_lookup",
+        after_rag,
+        {
+            "answer": "answer",
+            "web": "web_search"
+        }
+    )
+    
+    g.add_edge("web_search", "answer")
+    g.add_edge("answer", END)
+
+    agent = g.compile(checkpointer=MemorySaver())
+    return agent
+
+rag_agent = build_agent()
