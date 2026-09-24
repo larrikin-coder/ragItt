@@ -55,9 +55,9 @@ class RagJudge(BaseModel):
     sufficient:bool = Field(...,description="True if retrieved information is sufficient to answer the users question,False otherwise.")
 
 #LLm instances with structured schemas
-router_llm = ChatGroq(model="openai/gpt-oss-20b",temperature="0").with_structured_output(RouteDecision)
-judge_llm = ChatGroq(model="openai/gpt-oss-20b",temperature="0").with_structured_output(RagJudge)
-answer_llm = ChatGroq(model="openai/gpt-oss-20b",temperature="0.7")
+router_llm = ChatGroq(model="openai/gpt-oss-20b",temperature=0).with_structured_output(RouteDecision,method="json_mode")
+judge_llm = ChatGroq(model="openai/gpt-oss-20b",temperature=0).with_structured_output(RagJudge,method="json_mode")
+answer_llm = ChatGroq(model="openai/gpt-oss-20b",temperature=0.7)
 
 
 #State : Shared Data Structure
@@ -178,7 +178,7 @@ def rag_node(state:AgentState)->AgentState:
     ]
     
     
-    verdict: RagJudge = judge_llm.invoke(judge_message)
+    verdict: RagJudge = judge_llm.invoke(judge_messages)
     print(f"Rag Judge verdict:{verdict.sufficient}")
     print('Existing rag_node')
     
@@ -189,7 +189,7 @@ def rag_node(state:AgentState)->AgentState:
         next_route = "web" if web_search_enabled else "answer"
         print(f"RAG nor sufficient. Web search enabled {web_search_enabled}. Next Route: {next_route}")
     
-
+    return {**state,"route":next_route,"rag":chunks,"web_search_enabled":web_search_enabled}
 
 #Node 3 Web search
 

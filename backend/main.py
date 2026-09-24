@@ -51,16 +51,16 @@ async def upload_document(file:UploadFile = File(...)):
     with tempfile.NamedTemporaryFile(delete=False,suffix=".pdf") as tmp_file:
         file_content = await file.read()
         tmp_file.write(file_content)
-        temp_file_path = temp_file.name
+        tmp_file_path = tmp_file.name
     
-    print(f"Recieved pdf for upload: {file.filename}. Save temporarily to {temp_file_path}")
+    print(f"Recieved pdf for upload: {file.filename}. Save temporarily to {tmp_file_path}")
     
     
     try:
-        loader = PyPDFLoader(temp_file_path)
+        loader = PyPDFLoader(tmp_file_path)
         documents = loader.load()
         total_chunks_added = 0
-        if document:
+        if documents:
             full_text_context =  "\n\n".join([doc.page_content for doc in  documents])
             add_documents(full_text_context)
             total_chunks_added = len(documents)
@@ -79,9 +79,9 @@ async def upload_document(file:UploadFile = File(...)):
         )
         
     finally:
-        if os.path.exist(temp_file_path):
-            os.remove(temp_file_path)
-            print(f"Cleaned up temporary file: {temp_file_path}")
+        if os.path.exists(tmp_file_path):
+            os.remove(tmp_file_path)
+            print(f"Cleaned up temporary file: {tmp_file_path}")
 
 @app.post("/chat/",response_model=AgentResponse)
 async def chat_with_agent(request: QueryRequest):
