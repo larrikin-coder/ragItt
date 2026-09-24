@@ -29,7 +29,7 @@ class QueryRequest(BaseModel):
 
 class AgentResponse(BaseModel):
     response:str
-    trace_event:List[TraceEvent] = Field(default_factory=list)
+    trace_events:List[TraceEvent] = Field(default_factory=list)
 
 class DocumentUploadResponse(BaseModel):
     message: str
