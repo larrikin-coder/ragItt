@@ -6,8 +6,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 import config
 
-
-pc = Pinecone(api_key=PINECONE_API)
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+PINECONE_INDEX = os.getenv("PINECONE_INDEX")
+EMBED_MODEL = os.getenv("EMBED_MODEL")
+pc = Pinecone(api_key=PINECONE_API_KEY)
 
 embedding = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
 

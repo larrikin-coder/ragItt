@@ -1,4 +1,4 @@
-from typing import TypeDict,List,Literal
+from typing import TypedDict,List,Literal
 from langchain_core.messages import BaseMessage,HumanMessage,AIMessage
 from langchain_groq import ChatGroq
 from pydantic import BaseModel,Field
@@ -55,13 +55,13 @@ class RagJudge(BaseModel):
     sufficient:bool = Field(...,description="True if retrieved information is sufficient to answer the users question,False otherwise.")
 
 #LLm instances with structured schemas
-router_llm = ChatGroq(model="llama-3.1-8b-instant",temperature="0").with_structured_output(RouteDecision)
-judge_llm = ChatGroq(model="llama-3.1-8b-instant",temperature="0").with_structured_output(RagJudge)
-answer_llm = ChatGroq(model="llama-3.1-8b-instant",temperature="0.7")
+router_llm = ChatGroq(model="openai/gpt-oss-20b",temperature="0").with_structured_output(RouteDecision)
+judge_llm = ChatGroq(model="openai/gpt-oss-20b",temperature="0").with_structured_output(RagJudge)
+answer_llm = ChatGroq(model="openai/gpt-oss-20b",temperature="0.7")
 
 
 #State : Shared Data Structure
-class AgentState(TypeDict,total=False):
+class AgentState(TypedDict,total=False):
     messages:List[BaseMessage]
     route: Literal["rag","web","answer","end"]
     rag:str
@@ -114,12 +114,12 @@ def router_node(state:AgentState)->AgentState:
     
     result : RouteDecision = router_llm.invoke(messages)
     initial_router_decision = result.route
-    router_overrider_reason = None
+    router_override_reason = None
     
     #Override the router decision to go for the web search
     if not web_search_enabled and result.route=="web":
         result.route = "rag"
-        router_overrider_reason = "Web search disabled by user, redirected to rag"
+        router_override_reason = "Web search disabled by user, redirected to rag"
         print(f"Router Decision overriden changed from 'web' to 'rag'")
         
     print(f"Router final Decision {result.route},reply(if 'end'):{result.reply}")
@@ -127,7 +127,7 @@ def router_node(state:AgentState)->AgentState:
     
     out = {
         "messages": state['messages'],
-        "router": result.route,
+        "route": result.route,
         "web_search_enabled": web_search_enabled
     }
     
@@ -230,7 +230,7 @@ def answer_node(state:AgentState)->AgentState:
     prompt = f"""Please answer the user's question using the provided context.
                 If the context is empty or irrelevant, try to answer based on your general knowledge.
 
-                Question: {user_q}
+                Question: {user_query}
 
                 Context:
                 {context}
@@ -240,7 +240,7 @@ def answer_node(state:AgentState)->AgentState:
     ans = answer_llm.invoke([HumanMessage(content=prompt)]).content
     print(f"Final answer generated: {ans[:200]}...")
     print("--- Exiting answer_node ---")
-    return {**state,"messages":state["messages"]+AIMessage(content=ans)}
+    return {**state,"messages":state["messages"]+[AIMessage(content=ans)]}
 
 
 # --- Routing helpers ---

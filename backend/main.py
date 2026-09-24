@@ -98,7 +98,7 @@ async def chat_with_agent(request: QueryRequest):
         
         final_message = ""
         print(f"Starting Agent Stream for session {request.session_id}")
-        print(f"Web search Enabled : {request.web_search}")
+        print(f"Web search Enabled : {request.enable_web_search}")
         
         for i,s in enumerate(rag_agent.stream(inputs,config=config)):
             current_node_name = None
@@ -118,7 +118,70 @@ async def chat_with_agent(request: QueryRequest):
                 route_decision = node_output_state.get('route')
                 initial_decision = node_output_state. get('initial_router_decision',route_decision)
                 override_reason = node_output_state.get('router_override_reason',None)
+                if override_reason:
+                    event_description = f"Router initially decided: {initial_decision}. Overridden to: {route_decision} because {override_reason}"
+                    event_details = {"initial_decision":initial_decision,"final_decision":route_decision,"override_reason":override_reason}
+                else:
+                    event_description = f"Router decided: {route_decision}"
+                    event_details  = {"decision":route_decision, "reason": "Based on initial query analysis"}
+                event_type = "router_decision"
+            elif current_node_name == "rag_lookup":
+                rag_content_summary = node_output_state.get("rag", "")[:200] + "..."
                 
+                rag_sufficient = node_output_state.get("route") == "answer" 
+                
+                if rag_sufficient:
+                    event_description = f"RAG Lookup performed. Content found and deemed sufficient. Proceeding to answer."
+                    event_details = {"retrieved_content_summary": rag_content_summary, "sufficiency_verdict": "Sufficient"}
+                else:
+                    event_description = f"RAG Lookup performed. Content NOT sufficient. Diverting to web search."
+                    event_details = {"retrieved_content_summary": rag_content_summary, "sufficiency_verdict": "Not Sufficient"}
+                
+                event_type = "rag_action"
+            elif current_node_name == "web_search":
+                web_content_summary = node_output_state.get("web", "")[:200] + "..."
+                event_description = f"Web Search performed. Results retrieved. Proceeding to answer."
+                event_details = {"retrieved_content_summary": web_content_summary}
+                event_type = "web_action"
+            elif current_node_name == "answer":
+                event_description = "Generating final answer using gathered context."
+                event_type = "answer_generation"
+            elif current_node_name == "__end__":
+                event_description = "Agent process completed."
+                event_type = "process_end"
+                
+                
+            trace_events_for_frontend.append(
+                TraceEvent(
+                    step = i+1,
+                    node_name = current_node_name,
+                    description = event_description,
+                    details = event_details,
+                    event_type=event_type
+                )
+            )
+            
+            
+            print(f"Streamed Event: Step {i+1} - Node: {current_node_name} - Desc: {event_description}")
+            
+        final_actual_state_dict = None
+        if s:
+            if '__end__' in s:
+                final_actual_state_dict = s['__end__']
+            else:
+                if list(s.keys()):
+                    final_actual_state_dict =  s[list(s.keys())[0]]
+        if final_actual_state_dict and "messages" in final_actual_state_dict:
+            for msg in reversed(final_actual_state_dict["messages"]):
+                if isinstance(msg,AIMessage):
+                    final_message = msg.content
+                    break
+        if not final_message:
+            print("Agent finished, but no final AIMessage found in the final state after stream completion")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail="Agent did not return a valid response")
+        print(f"--- Agent Stream Ended. Final Response: {final_message[:200]}... ---")
+
+        return AgentResponse(response=final_message, trace_events=trace_events_for_frontend)
         
     except Exception as e:
         import traceback
@@ -127,3 +190,10 @@ async def chat_with_agent(request: QueryRequest):
         print(error_details)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail=f"Internal Server Error: {e}")
     
+@app.get("/health")
+async def health_check():
+    return {"Status:" "Ok"}
+
+@app.get("/routes")
+def list_routes():
+    return [{"path": r.path, "methods": list(r.methods)} for r in app.routes]
