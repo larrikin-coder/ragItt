@@ -55,9 +55,9 @@ class RagJudge(BaseModel):
     sufficient:bool = Field(...,description="True if retrieved information is sufficient to answer the users question,False otherwise.")
 
 #LLm instances with structured schemas
-router_llm = ChatGroq(model="openai/gpt-oss-20b",temperature=0).with_structured_output(RouteDecision,method="json_mode")
-judge_llm = ChatGroq(model="openai/gpt-oss-20b",temperature=0).with_structured_output(RagJudge,method="json_mode")
-answer_llm = ChatGroq(model="openai/gpt-oss-20b",temperature=0.7)
+router_llm = ChatGroq(model="qwen/qwen3.8-27b",temperature=0).with_structured_output(RouteDecision)
+judge_llm = ChatGroq(model="qwen/qwen3.8-27b",temperature=0).with_structured_output(RagJudge)
+answer_llm = ChatGroq(model="qwen/qwen3.8-27b",temperature=0.7)
 
 
 #State : Shared Data Structure
@@ -79,6 +79,7 @@ def router_node(state:AgentState)->AgentState:
         "Your primary goal is to provide accurate and relevant information by selecting the best source."
         "Prioritize using the **internal knowledge base (RAG)** for factual information that is likely "
         "to be contained within pre-uploaded documents or for common, well-established facts."
+        "\n\nRespond with a JSON object only."
     )
     
     if web_search_enabled:
@@ -117,7 +118,7 @@ def router_node(state:AgentState)->AgentState:
     router_override_reason = None
     
     #Override the router decision to go for the web search
-    if not web_search_enabled and result.route=="web":
+    if not web_search_enabled and result["route"]=="web":
         result.route = "rag"
         router_override_reason = "Web search disabled by user, redirected to rag"
         print(f"Router Decision overriden changed from 'web' to 'rag'")
@@ -220,9 +221,9 @@ def answer_node(state:AgentState)->AgentState:
     context_parts = []
     if state.get("rag"):
         context_parts.append("Knowledge base information:\n"+state['rag'])
-    elif state.get("web"):
+    if state.get("web"):
         if state['web'] and not state["web"].startswith("Web search was disabled"):
-            context_parts.append("Web Search results:\n"+state["web "])
+            context_parts.append("Web Search results:\n"+state["web"])
             
     context = "\n\n".join(context_parts)
     if not context.strip():
