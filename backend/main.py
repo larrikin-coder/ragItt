@@ -11,7 +11,20 @@ from langchain_community.document_loaders import PyPDFLoader
 from agent import rag_agent
 from vectorStore import add_documents
 
+from fastapi.middleware.cors import CORSMiddleware
+
+
+
+
+
 app = FastAPI(title="LangGraph RAG Agent API",description="API for the the Langgraph-powered RAG Agent with Pinecone and groq")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Next.js dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 memory = MemorySaver()
 
 
