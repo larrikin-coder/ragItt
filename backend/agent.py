@@ -77,7 +77,7 @@ class RagJudge(BaseModel):
 # answer_llm = ChatMistralAI(model="mistral-small-latest", temperature=0.7, api_key=MISTRAL_API_KEY)
 # answer_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7, google_api_key=GOOGLE_API_KEY)
 base_llm = ChatOpenAI(
-    model = "openrouter/free:free",
+    model = "openrouter/free",
     api_key = OPENROUTER_API_KEY,
     base_url = "https://openrouter.ai/api/v1"
 )
@@ -85,7 +85,7 @@ base_llm = ChatOpenAI(
 router_llm = base_llm.with_structured_output(RouteDecision)
 judge_llm = base_llm.with_structured_output(RagJudge)
 answer_llm = ChatOpenAI(
-    model = "openrouter/free:free",
+    model = "openrouter/free",
     api_key = OPENROUTER_API_KEY,
     base_url = "https://openrouter.ai/api/v1",
     temperature = 0.7
