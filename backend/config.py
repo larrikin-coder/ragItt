@@ -1,7 +1,6 @@
 import os
 from dotenv import load_dotenv
 
-
 load_dotenv()
 
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
@@ -13,5 +12,7 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 DOC_SOURCE_DIR = os.getenv("DOC_SOURCE_DIR","data")
 
 EMBED_MODEL = os.getenv("EMBED_MODEL")
-
-
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+MISTRAL_API_KEY= os.getenv("MISTRAL_API_KEY")
+OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY")
+print(OPENROUTER_API_KEY)

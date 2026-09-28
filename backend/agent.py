@@ -8,6 +8,10 @@ from vectorStore import get_retriever
 from langchain_tavily import TavilySearch
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_mistralai import ChatMistralAI
+from config import MISTRAL_API_KEY, OPENROUTER_API_KEY
+from langchain_openai import ChatOpenAI
 
 
 tavily = TavilySearch(max_result=3,topic="general")
@@ -55,9 +59,37 @@ class RagJudge(BaseModel):
     sufficient:bool = Field(...,description="True if retrieved information is sufficient to answer the users question,False otherwise.")
 
 #LLm instances with structured schemas
-router_llm = ChatGroq(model="qwen/qwen3.8-27b",temperature=0).with_structured_output(RouteDecision)
-judge_llm = ChatGroq(model="qwen/qwen3.8-27b",temperature=0).with_structured_output(RagJudge)
-answer_llm = ChatGroq(model="qwen/qwen3.8-27b",temperature=0.7)
+# router_llm = ChatGroq(model="qwen/qwen3.8-27b",temperature=0).with_structured_output(RouteDecision)
+# judge_llm = ChatGroq(model="qwen/qwen3.8-27b",temperature=0).with_structured_output(RagJudge)
+# answer_llm = ChatGroq(model="qwen/qwen3.8-27b",temperature=0.7)
+# Small output tasks — use 20b with tight token limits
+# router_llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0, max_tokens=150).with_structured_output(RouteDecision)
+# judge_llm  = ChatGroq(model="openai/gpt-oss-20b", temperature=0, max_tokens=50).with_structured_output(RagJudge)
+
+# # Final answer — use the best available
+# answer_llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0.7, max_tokens=1024)
+
+# router_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0, google_api_key=GOOGLE_API_KEY).with_structured_output(RouteDecision)
+# judge_llm  = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0, google_api_key=GOOGLE_API_KEY).with_structured_output(RagJudge)
+
+# router_llm = ChatMistralAI(model="mistral-small-latest", temperature=0, api_key=MISTRAL_API_KEY).with_structured_output(RouteDecision)
+# judge_llm  = ChatMistralAI(model="mistral-small-latest", temperature=0, api_key=MISTRAL_API_KEY).with_structured_output(RagJudge)
+# answer_llm = ChatMistralAI(model="mistral-small-latest", temperature=0.7, api_key=MISTRAL_API_KEY)
+# answer_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7, google_api_key=GOOGLE_API_KEY)
+base_llm = ChatOpenAI(
+    model = "openrouter/free:free",
+    api_key = OPENROUTER_API_KEY,
+    base_url = "https://openrouter.ai/api/v1"
+)
+
+router_llm = base_llm.with_structured_output(RouteDecision)
+judge_llm = base_llm.with_structured_output(RagJudge)
+answer_llm = ChatOpenAI(
+    model = "openrouter/free:free",
+    api_key = OPENROUTER_API_KEY,
+    base_url = "https://openrouter.ai/api/v1",
+    temperature = 0.7
+)
 
 
 #State : Shared Data Structure
@@ -238,7 +270,13 @@ def answer_node(state:AgentState)->AgentState:
 
                 Provide a helpful, accurate, and concise response based on the available information."""
     print(f"Prompt sent to answer_llm: {prompt[:500]}...")
-    ans = answer_llm.invoke([HumanMessage(content=prompt)]).content
+    raw = answer_llm.invoke([HumanMessage(content=prompt)]).content
+    if isinstance(raw,list):
+        ans = "".join([part.get("text","") if isinstance(part,dict) else str(part) for part in raw])
+    else:
+        ans = raw
+    
+    
     print(f"Final answer generated: {ans[:200]}...")
     print("--- Exiting answer_node ---")
     return {**state,"messages":state["messages"]+[AIMessage(content=ans)]}
